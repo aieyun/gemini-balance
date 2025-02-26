@@ -1,7 +1,8 @@
 import asyncio
-from app.database import engine, Base
+from app.database import AsyncSessionLocal, engine, Base
 from app.models.api_key import APIKey
 from app.core.config import settings
+from sqlalchemy import select
 
 async def init_db():
     async with engine.begin() as conn:
@@ -9,7 +10,6 @@ async def init_db():
         await conn.run_sync(Base.metadata.create_all)
         
         # 初始化API keys
-        from app.database import AsyncSessionLocal
         async with AsyncSessionLocal() as session:
             # 检查是否已有数据
             result = await session.execute(select(APIKey))
