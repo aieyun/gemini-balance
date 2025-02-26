@@ -5,8 +5,10 @@ from app.core.config import settings
 
 logger = get_security_logger()
 
+
 def verify_auth_token(token: str) -> bool:
     return token == settings.AUTH_TOKEN
+
 
 class SecurityService:
     def __init__(self, allowed_tokens: list, auth_token: str):

@@ -9,3 +9,7 @@ uvicorn
 google-genai
 jinja2
 python-multipart
+sqlalchemy
+asyncpg
+alembic
+cryptography  # MySQL连接需要

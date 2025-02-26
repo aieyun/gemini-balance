@@ -6,6 +6,7 @@ from app.core.config import settings
 
 logger = get_model_logger()
 
+
 class ModelService:
     def __init__(self, model_search: list):
         self.model_search = model_search

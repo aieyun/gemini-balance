@@ -17,11 +17,14 @@ logger = get_gemini_logger()
 # 初始化服务
 security_service = SecurityService(settings.ALLOWED_TOKENS, settings.AUTH_TOKEN)
 
+
 async def get_key_manager():
     return await get_key_manager_instance()
 
+
 async def get_next_working_key_wrapper(key_manager: KeyManager = Depends(get_key_manager)):
     return await key_manager.get_next_working_key()
+
 
 model_service = ModelService(settings.MODEL_SEARCH)
 
@@ -29,7 +32,7 @@ model_service = ModelService(settings.MODEL_SEARCH)
 @router.get("/models")
 @router_v1beta.get("/models")
 async def list_models(_=Depends(security_service.verify_key),
-    key_manager: KeyManager = Depends(get_key_manager)):
+                      key_manager: KeyManager = Depends(get_key_manager)):
     """获取可用的Gemini模型列表"""
     logger.info("-" * 50 + "list_gemini_models" + "-" * 50)
     logger.info("Handling Gemini models list request")
@@ -111,7 +114,7 @@ async def verify_key(api_key: str):
     """验证Gemini API密钥的有效性"""
     logger.info("-" * 50 + "verify_gemini_key" + "-" * 50)
     logger.info("Verifying API key validity")
-    
+
     try:
         # 使用generate_content接口测试key的有效性
         gemini_requset = GeminiRequest(
@@ -122,7 +125,7 @@ async def verify_key(api_key: str):
                 )
             ]
         )
-        response = chat_service.generate_content(settings.TEST_MODEL,gemini_requset, api_key)
+        response = chat_service.generate_content(settings.TEST_MODEL, gemini_requset, api_key)
         if response:
             return JSONResponse({"status": "valid"})
         return JSONResponse({"status": "invalid"})

@@ -17,6 +17,17 @@ class Settings(BaseSettings):
     UPLOAD_PROVIDER: str = "smms"
     SMMS_SECRET_TOKEN: str = ""
     TEST_MODEL: str = "gemini-1.5-flash"
+    
+    # MySQL数据库配置
+    MYSQL_HOST: str = "localhost"
+    MYSQL_PORT: int = 3306
+    MYSQL_USER: str = "user"
+    MYSQL_PASSWORD: str = "password"
+    MYSQL_DATABASE: str = "gemini"
+    
+    @property
+    def DATABASE_URL(self) -> str:
+        return f"mysql+aiomysql://{self.MYSQL_USER}:{self.MYSQL_PASSWORD}@{self.MYSQL_HOST}:{self.MYSQL_PORT}/{self.MYSQL_DATABASE}"
 
     def __init__(self):
         super().__init__()
