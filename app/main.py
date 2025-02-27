@@ -7,6 +7,7 @@ from app.core.logger import get_main_logger
 from app.core.security import verify_auth_token
 from app.services.key_manager import get_key_manager_instance
 from app.core.config import settings
+from contextlib import asynccontextmanager
 
 from app.api import gemini_routes, openai_routes
 import uvicorn
@@ -15,7 +16,25 @@ import uvicorn
 # 配置日志
 logger = get_main_logger()
 
-app = FastAPI()
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # 启动事件代码
+    global key_manager
+    logger.info("Application starting up...")
+    try:
+        key_manager = await get_key_manager_instance(settings.API_KEYS)
+        logger.info("KeyManager initialized successfully")
+    except Exception as e:
+        logger.error(f"Failed to initialize KeyManager: {str(e)}")
+        raise
+    
+    yield  # 这里会在应用运行期间暂停
+    
+    # 关闭事件代码（如果有的话）
+    logger.info("Application shutting down...")
+    # 这里可以添加清理资源的代码
+
+app = FastAPI(lifespan=lifespan)
 
 # 配置Jinja2模板
 templates = Jinja2Templates(directory="app/templates")
@@ -25,17 +44,6 @@ app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
 # 创建 KeyManager 实例
 key_manager = None
-
-@app.on_event("startup")
-async def startup_event():
-    global key_manager
-    logger.info("Application starting up...")
-    try:
-        key_manager = await get_key_manager_instance(settings.API_KEYS)
-        logger.info("KeyManager initialized successfully")
-    except Exception as e:
-        logger.error(f"Failed to initialize KeyManager: {str(e)}")
-        raise
 
 # 添加中间件来处理未经身份验证的请求
 @app.middleware("http")
