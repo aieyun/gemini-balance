@@ -1,7 +1,8 @@
 # app/services/chat_service.py
 
+from copy import deepcopy
 import json
-from typing import Dict, Any, AsyncGenerator, List, Union
+from typing import Dict, Any, AsyncGenerator, List, Optional, Union
 from app.core.logger import get_openai_logger
 from app.services.chat.message_converter import OpenAIMessageConverter
 from app.services.chat.response_handler import OpenAIResponseHandler
@@ -39,6 +40,25 @@ def _build_tools(
         tools.append({"code_execution": {}})
     if model.endswith("-search"):
         tools.append({"googleSearch": {}})
+
+    # 将 request 中的 tools 合并到 tools 中
+    if request.tools:
+        function_declarations = []
+        for tool in request.tools:
+            if not tool or not isinstance(tool, dict):
+                continue
+
+            if tool.get("type", "") == "function" and tool.get("function"):
+                function = deepcopy(tool.get("function"))
+                parameters = function.get("parameters", {})
+                if parameters.get("type") == "object" and not parameters.get("properties", {}):
+                    function.pop("parameters", None)
+
+                function_declarations.append(function)
+
+        if function_declarations:
+            tools.append({"functionDeclarations": function_declarations})
+            
     return tools
 
 
@@ -67,10 +87,10 @@ def _get_safety_settings(model: str) -> List[Dict[str, str]]:
 
 
 def _build_payload(
-        request: ChatRequest, messages: List[Dict[str, Any]]
+    request: ChatRequest, messages: List[Dict[str, Any]], instruction: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
     """构建请求payload"""
-    return {
+    payload = {
         "contents": messages,
         "generationConfig": {
             "temperature": request.temperature,
@@ -82,6 +102,16 @@ def _build_payload(
         "tools": _build_tools(request, messages),
         "safetySettings": _get_safety_settings(request.model),
     }
+
+    if (
+        instruction
+        and isinstance(instruction, dict)
+        and instruction.get("role") == "system"
+        and instruction.get("parts")
+    ):
+        payload["systemInstruction"] = instruction
+
+    return payload
 
 
 class OpenAIChatService:
@@ -100,10 +130,10 @@ class OpenAIChatService:
     ) -> Union[Dict[str, Any], AsyncGenerator[str, None]]:
         """创建聊天完成"""
         # 转换消息格式
-        messages = self.message_converter.convert(request.messages)
+        messages, instruction = self.message_converter.convert(request.messages)
 
         # 构建请求payload
-        payload = _build_payload(request, messages)
+        payload = _build_payload(request, messages, instruction)
 
         if request.stream:
             return self._handle_stream_completion(request.model, payload, api_key)
