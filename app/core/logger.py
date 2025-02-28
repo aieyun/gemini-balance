@@ -133,3 +133,23 @@ def get_retry_logger():
 
 def get_image_create_logger():
     return Logger.setup_logger("image_create")
+
+
+def get_database_logger():
+    return Logger.setup_logger("database")
+
+
+def get_auth_middleware_logger():
+    return Logger.get_logger("auth_middleware")
+
+
+def get_app_logger():
+    return Logger.get_logger("app")
+
+
+def get_health_logger():
+    return Logger.get_logger("health")
+
+
+def get_auth_logger():
+    return Logger.get_logger("auth")
