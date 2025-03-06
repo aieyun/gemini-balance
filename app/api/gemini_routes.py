@@ -66,7 +66,7 @@ async def generate_content(
     logger.info(f"Using API key: {api_key}")
 
     try:
-        response = chat_service.generate_content(
+        response = await chat_service.generate_content(
             model=model_name,
             request=request,
             api_key=api_key

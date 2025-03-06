@@ -7,6 +7,7 @@ from app.core.logger import get_openai_logger
 from app.services.chat.message_converter import OpenAIMessageConverter
 from app.services.chat.response_handler import OpenAIResponseHandler
 from app.services.chat.api_client import GeminiApiClient
+from app.services.chat.stream_optimizer import openai_optimizer
 from app.schemas.openai_models import ChatRequest, ImageGenerationRequest
 from app.core.config import settings
 from app.services.image_create_service import ImageCreateService
@@ -57,7 +58,14 @@ def _build_tools(
                 function_declarations.append(function)
 
         if function_declarations:
-            tools.append({"functionDeclarations": function_declarations})
+            # 按照 function 的 name 去重
+            names, functions = set(), []
+            for item in function_declarations:
+                if item.get("name") not in names:
+                    names.add(item.get("name"))
+                    functions.append(item)
+
+            tools.append({"functionDeclarations": functions})
             
     return tools
 
@@ -122,6 +130,23 @@ class OpenAIChatService:
         self.api_client = GeminiApiClient(base_url)
         self.key_manager = key_manager
         self.image_create_service = ImageCreateService()
+        
+    def _extract_text_from_openai_chunk(self, chunk: Dict[str, Any]) -> str:
+        """从OpenAI响应块中提取文本内容"""
+        if not chunk.get("choices"):
+            return ""
+            
+        choice = chunk["choices"][0]
+        if "delta" in choice and "content" in choice["delta"]:
+            return choice["delta"]["content"]
+        return ""
+        
+    def _create_char_openai_chunk(self, original_chunk: Dict[str, Any], text: str) -> Dict[str, Any]:
+        """创建包含指定文本的OpenAI响应块"""
+        chunk_copy = json.loads(json.dumps(original_chunk))  # 深拷贝
+        if chunk_copy.get("choices") and "delta" in chunk_copy["choices"][0]:
+            chunk_copy["choices"][0]["delta"]["content"] = text
+        return chunk_copy
 
     async def create_chat_completion(
             self,
@@ -137,13 +162,13 @@ class OpenAIChatService:
 
         if request.stream:
             return self._handle_stream_completion(request.model, payload, api_key)
-        return self._handle_normal_completion(request.model, payload, api_key)
+        return await self._handle_normal_completion(request.model, payload, api_key)
 
-    def _handle_normal_completion(
+    async def _handle_normal_completion(
             self, model: str, payload: Dict[str, Any], api_key: str
     ) -> Dict[str, Any]:
         """处理普通聊天完成"""
-        response = self.api_client.generate_content(payload, model, api_key)
+        response = await self.api_client.generate_content(payload, model, api_key)
         return self.response_handler.handle_response(
             response, model, stream=False, finish_reason="stop"
         )
@@ -166,7 +191,19 @@ class OpenAIChatService:
                             chunk, model, stream=True, finish_reason=None
                         )
                         if openai_chunk:
-                            yield f"data: {json.dumps(openai_chunk)}\n\n"
+                            # 提取文本内容
+                            text = self._extract_text_from_openai_chunk(openai_chunk)
+                            if text:
+                                # 使用流式输出优化器处理文本输出
+                                async for optimized_chunk in openai_optimizer.optimize_stream_output(
+                                    text,
+                                    lambda t: self._create_char_openai_chunk(openai_chunk, t),
+                                    lambda c: f"data: {json.dumps(c)}\n\n"
+                                ):
+                                    yield optimized_chunk
+                            else:
+                                # 如果没有文本内容（如工具调用等），整块输出
+                                yield f"data: {json.dumps(openai_chunk)}\n\n"
                 yield f"data: {json.dumps(self.response_handler.handle_response({}, model, stream=True, finish_reason='stop'))}\n\n"
                 yield "data: [DONE]\n\n"
                 logger.info("Streaming completed successfully")
@@ -208,7 +245,19 @@ class OpenAIChatService:
                 image_data, model, stream=True, finish_reason=None
             )
             if openai_chunk:
-                yield f"data: {json.dumps(openai_chunk)}\n\n"
+                # 提取文本内容
+                text = self._extract_text_from_openai_chunk(openai_chunk)
+                if text:
+                    # 使用流式输出优化器处理文本输出
+                    async for optimized_chunk in openai_optimizer.optimize_stream_output(
+                        text,
+                        lambda t: self._create_char_openai_chunk(openai_chunk, t),
+                        lambda c: f"data: {json.dumps(c)}\n\n"
+                    ):
+                        yield optimized_chunk
+                else:
+                    # 如果没有文本内容（如图片URL等），整块输出
+                    yield f"data: {json.dumps(openai_chunk)}\n\n"
         yield f"data: {json.dumps(self.response_handler.handle_response({}, model, stream=True, finish_reason='stop'))}\n\n"
         yield "data: [DONE]\n\n"
         logger.info("Image chat streaming completed successfully")
